@@ -214,7 +214,7 @@ export default function SplitView({ session, initialPeople, initialItems, initia
   }
 
   // Text used everywhere we share the link.
-  const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/s/${session.slug}` : "";
   const shareTitle = session.title ? `Split-ez: ${session.title}` : "Split-ez — split the bill";
   const shareText = `${
     session.title ? `Splitting "${session.title}"` : "Let's split the bill"
