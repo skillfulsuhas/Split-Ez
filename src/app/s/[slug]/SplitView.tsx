@@ -213,14 +213,42 @@ export default function SplitView({ session, initialPeople, initialItems, initia
     localStorage.setItem(meKey, id);
   }
 
+  // Text used everywhere we share the link.
+  const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+  const shareTitle = session.title ? `Split-ez: ${session.title}` : "Split-ez — split the bill";
+  const shareText = `${
+    session.title ? `Splitting "${session.title}"` : "Let's split the bill"
+  } on Split-ez 🍽️\nTap your name and pick what you ate:\n${shareUrl}`;
+
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
       /* ignore */
     }
+  }
+
+  // Native share sheet (mobile) → lets you send straight into a WhatsApp group,
+  // Messages, Telegram, etc. Falls back to copying the link on desktop.
+  async function shareLink() {
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+        return;
+      } catch {
+        /* user cancelled or unsupported — fall through to copy */
+      }
+    }
+    copyLink();
+  }
+
+  // Open WhatsApp directly with the message prefilled; WhatsApp then lets you
+  // pick the group/contact to send it to.
+  function shareWhatsApp() {
+    const url = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   const myTotal = meId ? result.perPerson.find((p) => p.personId === meId) : null;
@@ -236,6 +264,15 @@ export default function SplitView({ session, initialPeople, initialItems, initia
           </h1>
           <p className="mt-1 text-slate-600">Tap your name to start claiming what you ate.</p>
         </div>
+
+        {/* Share card — the host lands here right after creating the split. */}
+        <ShareCard
+          onShare={shareLink}
+          onWhatsApp={shareWhatsApp}
+          onCopy={copyLink}
+          copied={copied}
+        />
+
         <div className="grid grid-cols-2 gap-3">
           {people.map((p) => (
             <button
@@ -273,10 +310,11 @@ export default function SplitView({ session, initialPeople, initialItems, initia
           </div>
         </div>
         <button
-          onClick={copyLink}
-          className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
+          onClick={shareLink}
+          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
         >
-          {copied ? "Copied!" : "Share link"}
+          <span>{copied ? "✓" : "🔗"}</span>
+          {copied ? "Copied!" : "Share"}
         </button>
       </header>
 
@@ -353,11 +391,12 @@ export default function SplitView({ session, initialPeople, initialItems, initia
                 </div>
               )}
 
-              {/* Portion picker for shared items */}
-              {mine && its.length > 1 && (
+              {/* Portion picker — available as soon as you claim a dish, even if
+                  you're the first/only person on it. */}
+              {mine && (
                 <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5">
                   <div className="mb-1.5 text-xs font-medium text-slate-500">
-                    How much did you eat?
+                    {its.length > 1 ? "How much did you eat?" : "Ate only part of it? Set your share"}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {PORTIONS.map((opt) => {
@@ -579,6 +618,51 @@ export default function SplitView({ session, initialPeople, initialItems, initia
         </a>
       )}
     </main>
+  );
+}
+
+/**
+ * Share card shown on the join screen so the host can immediately send the
+ * link to a WhatsApp group (or any app) and friends can open & claim.
+ */
+function ShareCard({
+  onShare,
+  onWhatsApp,
+  onCopy,
+  copied,
+}: {
+  onShare: () => void;
+  onWhatsApp: () => void;
+  onCopy: () => void;
+  copied: boolean;
+}) {
+  return (
+    <div className="card animate-rise-in">
+      <div className="flex items-center gap-2">
+        <span className="icon-tile h-8 w-8 text-base">📲</span>
+        <div>
+          <div className="font-bold leading-tight">Send this to your group</div>
+          <div className="text-xs text-slate-500">Everyone opens the link & taps what they ate.</div>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-col gap-2">
+        <button
+          onClick={onWhatsApp}
+          className="btn w-full py-3 text-white shadow-soft"
+          style={{ backgroundColor: "#25D366" }}
+        >
+          <span className="text-lg">🟢</span> Share on WhatsApp
+        </button>
+        <div className="flex gap-2">
+          <button onClick={onShare} className="btn-ghost flex-1 py-2.5 text-sm">
+            More apps…
+          </button>
+          <button onClick={onCopy} className="btn-ghost flex-1 py-2.5 text-sm">
+            {copied ? "✓ Copied" : "Copy link"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -223,7 +223,6 @@ export default function NewSplit() {
         <input
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={handleFile}
           disabled={scanning}
           className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-brand file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-brand-dark"
