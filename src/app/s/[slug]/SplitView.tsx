@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { computeSplit, formatMoney, splitItem } from "@/lib/compute";
-import type { Session, Person, Item, Claim } from "@/lib/types";
+import type { Session, Person, Item, Claim, Friend } from "@/lib/types";
 import Avatar from "@/components/Avatar";
 
 interface Props {
@@ -71,9 +71,9 @@ export default function SplitView({ session, initialPeople, initialItems, initia
   const [customVal, setCustomVal] = useState<Record<string, string>>({});
   // Host-only: add a forgotten person to this split without recreating it.
   const [hostToken, setHostToken] = useState<string | null>(null);
-  const [addName, setAddName] = useState("");
   const [addBusy, setAddBusy] = useState(false);
   const [addErr, setAddErr] = useState("");
+  const [allFriends, setAllFriends] = useState<Friend[]>([]);
 
   const cur = session.currency || "INR";
   const meKey = `billsplit:me:${session.slug}`;
@@ -105,6 +105,22 @@ export default function SplitView({ session, initialPeople, initialItems, initia
         }))
       );
   }, [session.id]);
+
+  // Preload the address book once (host only) so the "forgot someone" search is
+  // instant and can reuse a saved friend's photo + identity.
+  useEffect(() => {
+    if (!hostToken) return;
+    let alive = true;
+    fetch("/api/friends")
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive && Array.isArray(d.friends)) setAllFriends(d.friends);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [hostToken]);
 
   // ---- Pull fresh state on mount ----
   // Server props can be stale by the time someone re-opens the link, so always
@@ -227,32 +243,40 @@ export default function SplitView({ session, initialPeople, initialItems, initia
     localStorage.setItem(meKey, id);
   }
 
-  // Host adds a forgotten person to this split (no recreate needed).
-  async function addPerson() {
-    const name = addName.trim();
-    if (!name || !hostToken) return;
+  // Host adds a forgotten person to this split (no recreate needed). If the name
+  // matches a saved friend, their photo + identity come along.
+  async function addPerson(payload: { name: string; photo_url: string | null; friend_id: string | null }): Promise<boolean> {
+    const name = payload.name.trim();
+    if (!name || !hostToken) return false;
     setAddErr("");
     // Friendly client-side guard before hitting the server.
     if (people.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
       setAddErr(`"${name}" is already in this split.`);
-      return;
+      return false;
     }
     setAddBusy(true);
     try {
       const res = await fetch("/api/session/person", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug: session.slug, hostToken, name }),
+        body: JSON.stringify({
+          slug: session.slug,
+          hostToken,
+          name,
+          photo_url: payload.photo_url,
+          friend_id: payload.friend_id,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setAddErr(data.error || "Could not add person.");
-        return;
+        return false;
       }
-      setAddName("");
       await refetch();
+      return true;
     } catch {
       setAddErr("Network error — try again.");
+      return false;
     } finally {
       setAddBusy(false);
     }
@@ -333,14 +357,12 @@ export default function SplitView({ session, initialPeople, initialItems, initia
 
         {hostToken && (
           <AddPerson
-            value={addName}
-            onChange={(v) => {
-              setAddName(v);
-              if (addErr) setAddErr("");
-            }}
+            friends={allFriends}
+            existing={people}
             onAdd={addPerson}
             busy={addBusy}
             error={addErr}
+            onClearError={() => addErr && setAddErr("")}
           />
         )}
 
@@ -670,14 +692,12 @@ export default function SplitView({ session, initialPeople, initialItems, initia
 
       {hostToken && (
         <AddPerson
-          value={addName}
-          onChange={(v) => {
-            setAddName(v);
-            if (addErr) setAddErr("");
-          }}
+          friends={allFriends}
+          existing={people}
           onAdd={addPerson}
           busy={addBusy}
           error={addErr}
+          onClearError={() => addErr && setAddErr("")}
         />
       )}
 
@@ -741,42 +761,111 @@ function ShareCard({
 }
 
 /**
- * Host-only box to add a forgotten person to an existing split.
+ * Host-only box to add a forgotten person to an existing split. Searches the
+ * saved address book locally (instant) so a known friend keeps their photo.
  */
 function AddPerson({
-  value,
-  onChange,
+  friends,
+  existing,
   onAdd,
   busy,
   error,
+  onClearError,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  onAdd: () => void;
+  friends: Friend[];
+  existing: Person[];
+  onAdd: (p: { name: string; photo_url: string | null; friend_id: string | null }) => Promise<boolean>;
   busy: boolean;
   error: string;
+  onClearError: () => void;
 }) {
+  const [value, setValue] = useState("");
+  const [picked, setPicked] = useState<Friend | null>(null);
+  const [open, setOpen] = useState(false);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const q = value.trim().toLowerCase();
+  const already = new Set(existing.map((p) => p.name.toLowerCase()));
+  const suggestions = q
+    ? friends
+        .filter((f) => f.name.toLowerCase().includes(q) && !already.has(f.name.toLowerCase()))
+        .slice(0, 6)
+    : [];
+
+  async function submit() {
+    const name = value.trim();
+    if (!name) return;
+    // Use the picked friend only if the name still matches it.
+    const match =
+      picked && picked.name.toLowerCase() === name.toLowerCase() ? picked : null;
+    const ok = await onAdd({
+      name,
+      photo_url: match?.photo_url ?? null,
+      friend_id: match?.id ?? null,
+    });
+    if (ok) {
+      setValue("");
+      setPicked(null);
+      setOpen(false);
+    }
+  }
+
   return (
     <div className="card">
       <div className="flex items-center gap-2">
         <span className="icon-tile h-8 w-8 text-base">＋</span>
         <div>
           <div className="font-bold leading-tight">Forgot someone?</div>
-          <div className="text-xs text-slate-500">Add a person to this split — no need to start over.</div>
+          <div className="text-xs text-slate-500">
+            Add a person to this split — saved friends pop up with their photo.
+          </div>
         </div>
       </div>
       <div className="mt-3 flex gap-2">
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onAdd();
-          }}
-          placeholder="Name"
-          className="input flex-1 py-2.5 text-sm"
-        />
+        <div className="relative flex-1">
+          <input
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setPicked(null);
+              setOpen(true);
+              onClearError();
+            }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => {
+              blurTimer.current = setTimeout(() => setOpen(false), 150);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submit();
+            }}
+            placeholder="Name"
+            className="input w-full py-2.5 text-sm"
+          />
+          {open && suggestions.length > 0 && (
+            <div
+              className="absolute z-10 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card"
+              onMouseDown={() => blurTimer.current && clearTimeout(blurTimer.current)}
+            >
+              {suggestions.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    setValue(f.name);
+                    setPicked(f);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                >
+                  <Avatar name={f.name} photoUrl={f.photo_url} size={28} />
+                  <span className="font-medium">{f.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button
-          onClick={onAdd}
+          onClick={submit}
           disabled={busy || !value.trim()}
           className="btn-primary px-5 py-2.5 text-sm disabled:opacity-50"
         >

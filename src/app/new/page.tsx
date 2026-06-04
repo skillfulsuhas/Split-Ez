@@ -81,6 +81,22 @@ export default function NewSplit() {
     { name: "", photo_url: null, friend_id: null },
   ]);
 
+  // Load the whole address book once, then filter it locally as the host types —
+  // instant suggestions instead of a network round-trip on every keystroke.
+  const [allFriends, setAllFriends] = useState<Friend[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/friends")
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive && Array.isArray(d.friends)) setAllFriends(d.friends);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Discount: optional. Either a percentage of the whole bill, or a flat amount.
   const [hasDiscount, setHasDiscount] = useState(false);
   const [discountType, setDiscountType] = useState<"percent" | "amount">("percent");
@@ -443,6 +459,7 @@ export default function NewSplit() {
               key={i}
               index={i}
               person={p}
+              friends={allFriends}
               canRemove={people.length > 1}
               onPatch={(patch) => patchPerson(i, patch)}
               onRemove={() => removePerson(i)}
@@ -517,40 +534,28 @@ function Field({
 function PersonRow({
   index,
   person,
+  friends,
   canRemove,
   onPatch,
   onRemove,
 }: {
   index: number;
   person: DraftPerson;
+  friends: Friend[];
   canRemove: boolean;
   onPatch: (patch: Partial<DraftPerson>) => void;
   onRemove: () => void;
 }) {
-  const [suggestions, setSuggestions] = useState<Friend[]>([]);
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounced address-book search as the host types a name.
-  useEffect(() => {
-    const q = person.name.trim();
-    if (q.length < 1) {
-      setSuggestions([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/friends?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        setSuggestions(Array.isArray(data.friends) ? data.friends : []);
-      } catch {
-        setSuggestions([]);
-      }
-    }, 220);
-    return () => clearTimeout(t);
-  }, [person.name]);
+  // Filter the preloaded address book locally — instant, no network per keystroke.
+  const q = person.name.trim().toLowerCase();
+  const suggestions = q
+    ? friends.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 8)
+    : [];
 
   function pick(f: Friend) {
     onPatch({ name: f.name, photo_url: f.photo_url, friend_id: f.id });

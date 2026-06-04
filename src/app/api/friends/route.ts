@@ -4,20 +4,18 @@ import { getAdminClient } from "@/lib/supabaseAdmin";
 export const runtime = "nodejs";
 
 /**
- * GET /api/friends?q=ali   -> search the shared address book by name.
- * Returns up to 8 matches: [{ id, name, photo_url }].
+ * GET /api/friends         -> the whole address book, so the client can load it
+ *                             once and filter locally (no per-keystroke latency).
+ * GET /api/friends?q=ali    -> server-side search (kept for compatibility).
+ * Returns: [{ id, name, photo_url }].
  */
 export async function GET(req: NextRequest) {
   const q = (req.nextUrl.searchParams.get("q") || "").trim();
-  if (!q) return NextResponse.json({ friends: [] });
   try {
     const db = getAdminClient();
-    const { data, error } = await db
-      .from("friends")
-      .select("id, name, photo_url")
-      .ilike("name", `%${q}%`)
-      .order("name")
-      .limit(8);
+    let query = db.from("friends").select("id, name, photo_url").order("name");
+    query = q ? query.ilike("name", `%${q}%`).limit(8) : query.limit(1000);
+    const { data, error } = await query;
     if (error) throw error;
     return NextResponse.json({ friends: data ?? [] });
   } catch (err) {
