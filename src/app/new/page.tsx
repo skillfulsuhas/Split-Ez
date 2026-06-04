@@ -86,6 +86,12 @@ export default function NewSplit() {
   const [discountType, setDiscountType] = useState<"percent" | "amount">("percent");
   const [discountValue, setDiscountValue] = useState("");
 
+  // Extra / platform discount (e.g. a Swiggy/Zomato coupon on top of the
+  // restaurant offer). Also percentage or flat amount.
+  const [hasExtraDiscount, setHasExtraDiscount] = useState(false);
+  const [extraDiscountType, setExtraDiscountType] = useState<"percent" | "amount">("amount");
+  const [extraDiscountValue, setExtraDiscountValue] = useState("");
+
   const [image, setImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const [scanning, setScanning] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -97,14 +103,24 @@ export default function NewSplit() {
   const itemsTotal = items.reduce((a, b) => a + num(b.price), 0);
   const grossTotal = itemsTotal + num(tax) + num(service) + num(extras);
 
-  // Resolve the discount to a rupee amount off the whole bill.
+  // Resolve the restaurant discount to a rupee amount off the whole bill.
   const discountAmount = !hasDiscount
     ? 0
     : discountType === "percent"
     ? Math.max(0, (grossTotal * num(discountValue)) / 100)
     : Math.max(0, num(discountValue));
 
-  const billTotal = Math.max(0, grossTotal - discountAmount);
+  // Extra/platform discount applies after the first discount.
+  const afterFirst = Math.max(0, grossTotal - discountAmount);
+  const extraDiscountAmount = !hasExtraDiscount
+    ? 0
+    : extraDiscountType === "percent"
+    ? Math.max(0, (afterFirst * num(extraDiscountValue)) / 100)
+    : Math.max(0, num(extraDiscountValue));
+
+  // Total discount sent to the backend (a single rupee amount, split proportionally).
+  const totalDiscount = Math.min(grossTotal, discountAmount + extraDiscountAmount);
+  const billTotal = Math.max(0, grossTotal - totalDiscount);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -181,6 +197,16 @@ export default function NewSplit() {
     if (cleanItems.length === 0) return setError("Add at least one item.");
     if (cleanPeople.length === 0) return setError("Add at least one person.");
 
+    // Block duplicate names, ignoring case ("Suhas" and "suhas" are the same person).
+    const seen = new Set<string>();
+    for (const p of cleanPeople) {
+      const key = p.name.toLowerCase();
+      if (seen.has(key)) {
+        return setError(`"${p.name}" is already in the list — each person can only be added once.`);
+      }
+      seen.add(key);
+    }
+
     setCreating(true);
     try {
       const res = await fetch("/api/session", {
@@ -192,7 +218,7 @@ export default function NewSplit() {
           tax: num(tax),
           service_charge: num(service),
           extras: num(extras),
-          discount: Math.round(discountAmount * 100) / 100,
+          discount: Math.round(totalDiscount * 100) / 100,
           items: cleanItems,
           people: cleanPeople,
           imageBase64: image?.base64,
@@ -340,6 +366,66 @@ export default function NewSplit() {
                 −{formatMoney(discountAmount)} off the bill
               </p>
             )}
+
+            {/* Extra / platform discount (coupon on top of the restaurant offer) */}
+            {!hasExtraDiscount ? (
+              <button
+                onClick={() => setHasExtraDiscount(true)}
+                className="self-start text-sm font-semibold text-brand hover:text-brand-dark"
+              >
+                + Add extra / platform discount
+              </button>
+            ) : (
+              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 animate-pop-in">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-600">Extra / platform discount</span>
+                  <button
+                    onClick={() => {
+                      setHasExtraDiscount(false);
+                      setExtraDiscountValue("");
+                    }}
+                    className="text-xs font-semibold text-slate-400 hover:text-red-500"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setExtraDiscountType("percent")}
+                    className={`chip flex-1 justify-center ${
+                      extraDiscountType === "percent" ? "chip-on" : "chip-off"
+                    }`}
+                  >
+                    Percentage %
+                  </button>
+                  <button
+                    onClick={() => setExtraDiscountType("amount")}
+                    className={`chip flex-1 justify-center ${
+                      extraDiscountType === "amount" ? "chip-on" : "chip-off"
+                    }`}
+                  >
+                    Amount ₹
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={extraDiscountValue}
+                    onChange={(e) => setExtraDiscountValue(e.target.value)}
+                    placeholder={extraDiscountType === "percent" ? "e.g. 5" : "e.g. 75"}
+                    inputMode="decimal"
+                    className="input flex-1"
+                  />
+                  <span className="text-lg font-semibold text-slate-500">
+                    {extraDiscountType === "percent" ? "%" : "₹"}
+                  </span>
+                </div>
+                {extraDiscountAmount > 0 && (
+                  <p className="text-sm font-medium text-green-600">
+                    −{formatMoney(extraDiscountAmount)} extra off
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -374,10 +460,10 @@ export default function NewSplit() {
           <span className="text-sm text-white/80">Bill total</span>
           <div className="text-3xl font-extrabold">{formatMoney(billTotal)}</div>
         </div>
-        {discountAmount > 0 && (
+        {totalDiscount > 0 && (
           <div className="text-right text-sm text-white/80">
             <div className="line-through">{formatMoney(grossTotal)}</div>
-            <div className="font-semibold text-white">−{formatMoney(discountAmount)}</div>
+            <div className="font-semibold text-white">−{formatMoney(totalDiscount)}</div>
           </div>
         )}
       </div>

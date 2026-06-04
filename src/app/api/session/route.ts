@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as CreateBody;
 
     const items = (body.items || []).filter((i) => i.name?.trim());
+    const seenNames = new Set<string>();
     const people: PersonInput[] = (body.people || [])
       .map((p): PersonInput => {
         if (typeof p === "string") return { name: p.trim(), photo_url: null, friend_id: null };
@@ -38,7 +39,14 @@ export async function POST(req: NextRequest) {
           friend_id: p.friend_id ?? null,
         };
       })
-      .filter((p) => p.name);
+      .filter((p) => p.name)
+      // Drop case-insensitive duplicate names — keep the first occurrence only.
+      .filter((p) => {
+        const key = p.name.toLowerCase();
+        if (seenNames.has(key)) return false;
+        seenNames.add(key);
+        return true;
+      });
 
     if (people.length === 0) {
       return NextResponse.json({ error: "Add at least one person." }, { status: 400 });

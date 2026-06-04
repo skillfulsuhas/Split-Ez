@@ -99,6 +99,13 @@ export default function SplitView({ session, initialPeople, initialItems, initia
       );
   }, [session.id]);
 
+  // ---- Pull fresh state on mount ----
+  // Server props can be stale by the time someone re-opens the link, so always
+  // re-query the backend right away instead of waiting for the first tap.
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
   // ---- Realtime subscription ----
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -214,7 +221,7 @@ export default function SplitView({ session, initialPeople, initialItems, initia
   }
 
   // Text used everywhere we share the link.
-  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/s/${session.slug}` : "";
+  const shareUrl = typeof window !== "undefined" ? window.location.href : "";
   const shareTitle = session.title ? `Split-ez: ${session.title}` : "Split-ez — split the bill";
   const shareText = `${
     session.title ? `Splitting "${session.title}"` : "Let's split the bill"
@@ -280,7 +287,7 @@ export default function SplitView({ session, initialPeople, initialItems, initia
               onClick={() => chooseMe(p.id)}
               className="flex flex-col items-center gap-2 rounded-2xl border border-white/60 bg-white/90 px-4 py-5 text-lg font-bold shadow-card backdrop-blur transition hover:border-brand hover:text-brand active:scale-[0.98]"
             >
-              <Avatar name={p.name} photoUrl={p.photo_url} size={56} ring enlargeable />
+              <Avatar name={p.name} photoUrl={p.photo_url} size={56} ring />
               <span>{p.name}</span>
             </button>
           ))}

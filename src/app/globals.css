@@ -10,10 +10,30 @@
 
 body {
   @apply text-slate-900 antialiased;
+  /* Rich gradient base (replaces the old flat white) so the page reads as a
+     designed surface even before the mesh + pattern layers paint. */
   background-color: #eef1ff;
+  background-image:
+    radial-gradient(1200px 800px at 10% -10%, rgba(129, 140, 248, 0.18), transparent 60%),
+    radial-gradient(1000px 700px at 110% 10%, rgba(236, 72, 153, 0.12), transparent 55%),
+    linear-gradient(180deg, #f4f1ff 0%, #eef3ff 45%, #f3f0ff 100%);
+  background-attachment: fixed;
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
+}
+
+/* Faint repeating food motif (forks, spoons, plates) tiled behind everything.
+   Pure inline SVG data-URI — no external asset, works offline. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' opacity='0.10'%3E%3C!-- fork --%3E%3Cpath d='M28 18v16M34 18v16M40 18v16M34 34v44'/%3E%3C!-- knife --%3E%3Cpath d='M120 18c8 4 8 18 0 26v34'/%3E%3C!-- plate --%3E%3Ccircle cx='80' cy='110' r='24'/%3E%3Ccircle cx='80' cy='110' r='15'/%3E%3C!-- cup --%3E%3Cpath d='M18 116h22v14a11 11 0 0 1-22 0zM40 120h7a6 6 0 0 1 0 12h-5'/%3E%3C!-- glass --%3E%3Cpath d='M120 110l4 28h12l4-28z'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 160px 160px;
 }
 
 /* ---- Animated gradient mesh background ---------------------------------- */
