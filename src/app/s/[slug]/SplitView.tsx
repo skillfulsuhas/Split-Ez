@@ -57,6 +57,40 @@ function isPreset(weight: number): boolean {
   return PORTIONS.some((p) => p.value > 0 && Math.abs(p.value - weight) < 0.01);
 }
 
+// Words to ignore when matching a spoken sentence against dish names.
+const VOICE_STOPWORDS = new Set([
+  "the", "and", "with", "for", "ate", "had", "have", "also", "some", "one", "two",
+  "plate", "plates", "order", "please", "piece", "pieces", "got", "took", "was",
+  "were", "that", "this", "just", "only", "plus", "then", "served",
+]);
+
+// Find which items a spoken sentence refers to. Matches on each dish's
+// distinctive words so "I had paneer tikka and a coke" claims those dishes.
+function matchSpokenItems(transcript: string, items: Item[]): Item[] {
+  const t = ` ${transcript.toLowerCase()} `;
+  return items.filter((item) => {
+    const base = item.name.toLowerCase().replace(/\([^)]*\)/g, " ");
+    const tokens = base
+      .replace(/[^a-z0-9 ]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 3 && !VOICE_STOPWORDS.has(w));
+    if (tokens.length === 0) return t.includes(base.trim());
+    return tokens.some((tok) => t.includes(` ${tok}`) || t.includes(`${tok} `));
+  });
+}
+
+// Build a UPI deep link the phone's UPI app can open.
+function upiPayLink(upi: string, payee: string, amount: number, note: string): string {
+  const params = new URLSearchParams({
+    pa: upi,
+    pn: payee || "Payee",
+    am: amount.toFixed(2),
+    cu: "INR",
+    tn: note,
+  });
+  return `upi://pay?${params.toString()}`;
+}
+
 export default function SplitView({ session, initialPeople, initialItems, initialClaims }: Props) {
   const [people, setPeople] = useState<Person[]>(initialPeople);
   const [items, setItems] = useState<Item[]>(initialItems);
@@ -74,6 +108,10 @@ export default function SplitView({ session, initialPeople, initialItems, initia
   const [addBusy, setAddBusy] = useState(false);
   const [addErr, setAddErr] = useState("");
   const [allFriends, setAllFriends] = useState<Friend[]>([]);
+  // Voice claiming.
+  const [listening, setListening] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceMsg, setVoiceMsg] = useState("");
 
   const cur = session.currency || "INR";
   const meKey = `billsplit:me:${session.slug}`;
@@ -243,6 +281,59 @@ export default function SplitView({ session, initialPeople, initialItems, initia
     localStorage.setItem(meKey, id);
   }
 
+  // Claim every dish a spoken sentence refers to (only adds, never un-claims).
+  async function claimByVoice(transcript: string) {
+    if (!meId) return;
+    const matched = matchSpokenItems(transcript, items);
+    const toAdd = matched.filter((it) => !myClaim(it.id));
+    if (toAdd.length === 0) {
+      setVoiceMsg(`Heard “${transcript}” — couldn't match a dish. Try naming items on the bill.`);
+      return;
+    }
+    setVoiceBusy(true);
+    try {
+      await supabase
+        .from("claims")
+        .insert(toAdd.map((it) => ({ item_id: it.id, person_id: meId, weight: 0 })));
+      await refetch();
+      setVoiceMsg(`✓ Added: ${toAdd.map((i) => i.name).join(", ")}`);
+    } catch {
+      setVoiceMsg("Couldn't save those — tap the items manually.");
+    } finally {
+      setVoiceBusy(false);
+    }
+  }
+
+  // Start the browser's speech recognition and claim what was heard.
+  function startVoice() {
+    if (typeof window === "undefined") return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setVoiceMsg("Voice input isn't supported in this browser — try Chrome on Android/desktop.");
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "en-IN";
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    setVoiceMsg("");
+    setListening(true);
+    rec.onresult = (e: any) => {
+      const transcript = e.results?.[0]?.[0]?.transcript ?? "";
+      if (transcript) claimByVoice(transcript);
+    };
+    rec.onerror = () => {
+      setVoiceMsg("Didn't catch that — tap the mic and try again.");
+      setListening(false);
+    };
+    rec.onend = () => setListening(false);
+    try {
+      rec.start();
+    } catch {
+      setListening(false);
+    }
+  }
+
   // Host adds a forgotten person to this split (no recreate needed). If the name
   // matches a saved friend, their photo + identity come along.
   async function addPerson(payload: { name: string; photo_url: string | null; friend_id: string | null }): Promise<boolean> {
@@ -321,6 +412,13 @@ export default function SplitView({ session, initialPeople, initialItems, initia
   }
 
   const myTotal = meId ? result.perPerson.find((p) => p.personId === meId) : null;
+
+  // Repayment: is a payer set, and am I that payer?
+  const myName = meId ? peopleById.get(meId)?.name ?? "" : "";
+  const payerName = session.payer_name?.trim() || "";
+  const payerUpi = session.payer_upi?.trim() || "";
+  const iAmPayer = !!payerName && myName.toLowerCase() === payerName.toLowerCase();
+  const payNote = session.title ? `Split-ez: ${session.title}` : "Split-ez bill";
 
   // ---- "Who are you?" gate ----
   if (!meId) {
@@ -418,6 +516,32 @@ export default function SplitView({ session, initialPeople, initialItems, initia
       </div>
 
       {allClaimed && <Confetti />}
+
+      {/* Voice claiming — tap the mic and say what you ate */}
+      <div className="card py-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={startVoice}
+            disabled={listening || voiceBusy}
+            aria-label="Speak what you ate"
+            className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-xl text-white shadow-soft transition active:scale-95 ${
+              listening ? "animate-pulse" : ""
+            }`}
+            style={{ backgroundImage: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}
+          >
+            🎤
+          </button>
+          <div className="min-w-0">
+            <div className="font-bold leading-tight">
+              {listening ? "Listening… say what you ate" : "Speak what you ate"}
+            </div>
+            <div className="text-xs text-slate-500">
+              e.g. “I had the paneer tikka and a cold coffee” — it ticks those items for you.
+            </div>
+          </div>
+        </div>
+        {voiceMsg && <p className="mt-2 text-sm font-medium text-brand">{voiceMsg}</p>}
+      </div>
 
       {/* Items */}
       <section className="space-y-2">
@@ -605,13 +729,68 @@ export default function SplitView({ session, initialPeople, initialItems, initia
         </div>
       )}
 
+      {/* Repay the person who paid, over UPI */}
+      {myTotal && payerName && (
+        iAmPayer ? (
+          <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+            🎉 You paid this bill. Everyone else can repay you
+            {payerUpi ? <> at <b>{payerUpi}</b></> : null} — they&apos;ll see a Pay button here.
+          </div>
+        ) : payerUpi ? (
+          <div className="card">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-slate-500">Pay your share to</div>
+                <div className="font-bold">{payerName}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-slate-500">You owe</div>
+                <div className="text-xl font-extrabold text-brand">{formatMoney(myTotal.total, cur)}</div>
+              </div>
+            </div>
+            <a
+              href={upiPayLink(payerUpi, payerName, myTotal.total, payNote)}
+              className="btn-primary mt-3 w-full py-3 text-base"
+            >
+              💸 Pay {formatMoney(myTotal.total, cur)} via UPI
+            </a>
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(payerUpi).catch(() => {});
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+              className="mt-2 w-full text-center text-xs font-medium text-slate-500"
+            >
+              {copied ? "✓ Copied" : `Or copy ${payerName}'s UPI: ${payerUpi}`}
+            </button>
+            <p className="mt-2 text-[11px] text-slate-400">
+              Opens your UPI app (GPay, PhonePe, Paytm…) with the amount prefilled. Confirm the
+              payee before paying.
+            </p>
+          </div>
+        ) : null
+      )}
+
       {/* Everyone summary — tap a person to see their exact breakdown */}
       <div>
         <button
           onClick={() => setShowSummary((s) => !s)}
-          className="text-sm font-semibold text-brand"
+          className="flex w-full items-center justify-between gap-2 rounded-2xl border border-white/60 bg-white/90 px-4 py-3.5 text-left shadow-card backdrop-blur transition hover:border-brand"
         >
-          {showSummary ? "Hide" : "Show"} everyone&apos;s totals
+          <span className="flex items-center gap-2">
+            <span className="icon-tile h-8 w-8 text-base">👥</span>
+            <span>
+              <span className="block font-bold leading-tight">Everyone&apos;s totals</span>
+              <span className="block text-xs text-slate-500">
+                See what each person owes · {result.perPerson.length} people
+              </span>
+            </span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="font-extrabold text-brand">{formatMoney(result.grandTotal, cur)}</span>
+            <span className="text-slate-400">{showSummary ? "▾" : "▸"}</span>
+          </span>
         </button>
         {showSummary && (
           <div className="mt-3 overflow-hidden rounded-2xl border border-white/60 bg-white/90 shadow-card backdrop-blur">

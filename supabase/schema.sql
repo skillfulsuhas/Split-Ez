@@ -13,13 +13,17 @@ create table if not exists sessions (
   service_charge  numeric(12,2) not null default 0,          -- split equally
   extras          numeric(12,2) not null default 0,          -- split equally (other charges)
   discount        numeric(12,2) not null default 0,          -- amount OFF the bill, split proportionally
+  payer_name      text,                                       -- who fronted the bill
+  payer_upi       text,                                       -- their UPI ID (name@bank) or phone, for repayment
   host_token      text not null,                             -- only the host knows this; gates edits
   published       boolean not null default false,
   created_at      timestamptz not null default now()
 );
 
--- If you already created the sessions table before discounts existed, run:
---   alter table sessions add column if not exists discount numeric(12,2) not null default 0;
+-- If you already created the sessions table before these columns existed, run:
+--   alter table sessions add column if not exists discount   numeric(12,2) not null default 0;
+--   alter table sessions add column if not exists payer_name text;
+--   alter table sessions add column if not exists payer_upi  text;
 
 -- Saved address book of friends (shared, no login). Lets you reuse a
 -- person's name + photo across many splits so faces show up automatically.

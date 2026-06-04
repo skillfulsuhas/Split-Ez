@@ -11,6 +11,8 @@ interface CreateBody {
   service_charge?: number;
   extras?: number;
   discount?: number;
+  payer_name?: string | null;
+  payer_upi?: string | null;
   items: { name: string; price: number }[];
   // Accept plain names (legacy) or rich objects with an avatar / friend link.
   people: (string | { name: string; photo_url?: string | null; friend_id?: string | null })[];
@@ -83,6 +85,8 @@ export async function POST(req: NextRequest) {
         service_charge: Number(body.service_charge) || 0,
         extras: Number(body.extras) || 0,
         discount: Math.max(0, Number(body.discount) || 0),
+        payer_name: body.payer_name?.trim() || null,
+        payer_upi: body.payer_upi?.trim() || null,
         bill_image_url: billImageUrl,
         host_token: hostToken,
         published: true,

@@ -108,6 +108,10 @@ export default function NewSplit() {
   const [extraDiscountType, setExtraDiscountType] = useState<"percent" | "amount">("amount");
   const [extraDiscountValue, setExtraDiscountValue] = useState("");
 
+  // Who fronted the bill + how everyone repays them (UPI ID or phone number).
+  const [payerName, setPayerName] = useState("");
+  const [payerUpi, setPayerUpi] = useState("");
+
   const [image, setImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const [scanning, setScanning] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -235,6 +239,8 @@ export default function NewSplit() {
           service_charge: num(service),
           extras: num(extras),
           discount: Math.round(totalDiscount * 100) / 100,
+          payer_name: payerName.trim() || null,
+          payer_upi: payerUpi.trim() || null,
           items: cleanItems,
           people: cleanPeople,
           imageBase64: image?.base64,
@@ -469,6 +475,34 @@ export default function NewSplit() {
         <button onClick={addPerson} className="mt-3 text-sm font-semibold text-brand hover:text-brand-dark">
           + Add person
         </button>
+      </section>
+
+      {/* Who paid? — enables one-tap UPI repayment at the end */}
+      <section className="card">
+        <h2 className="font-bold">Who paid the bill?</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          Optional — add the payer&apos;s name and UPI so everyone can repay them in one tap when
+          the split is done.
+        </p>
+        <div className="flex flex-col gap-2">
+          <input
+            value={payerName}
+            onChange={(e) => setPayerName(e.target.value)}
+            placeholder="Payer's name (e.g. Suhas)"
+            className="input py-2.5 text-sm"
+          />
+          <input
+            value={payerUpi}
+            onChange={(e) => setPayerUpi(e.target.value)}
+            placeholder="UPI ID (name@bank) or phone number"
+            inputMode="text"
+            className="input py-2.5 text-sm"
+          />
+          <p className="text-[11px] text-slate-400">
+            A UPI ID like <span className="font-medium">suhas@okhdfc</span> works most reliably. A
+            phone number works if it&apos;s registered for UPI.
+          </p>
+        </div>
       </section>
 
       {/* Total */}

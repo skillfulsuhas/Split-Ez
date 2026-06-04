@@ -8,6 +8,9 @@ export interface Session {
   service_charge: number;
   extras: number;
   discount: number;
+  // Who fronted the bill + how others repay them over UPI.
+  payer_name: string | null;
+  payer_upi: string | null; // a UPI ID (name@bank) or a phone number
   published: boolean;
   created_at: string;
 }
