@@ -69,15 +69,22 @@ export default function SplitView({ session, initialPeople, initialItems, initia
   // Per-item draft text for the "Custom" portion field.
   const [customOpen, setCustomOpen] = useState<Set<string>>(new Set());
   const [customVal, setCustomVal] = useState<Record<string, string>>({});
+  // Host-only: add a forgotten person to this split without recreating it.
+  const [hostToken, setHostToken] = useState<string | null>(null);
+  const [addName, setAddName] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addErr, setAddErr] = useState("");
 
   const cur = session.currency || "INR";
   const meKey = `billsplit:me:${session.slug}`;
+  const hostKey = `billsplit:host:${session.slug}`;
 
-  // Restore "who am I" from this device.
+  // Restore "who am I" + host token from this device.
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem(meKey) : null;
     if (saved && initialPeople.some((p) => p.id === saved)) setMeId(saved);
-  }, [meKey, initialPeople]);
+    if (typeof window !== "undefined") setHostToken(localStorage.getItem(hostKey));
+  }, [meKey, hostKey, initialPeople]);
 
   // ---- Live refetch (called on any realtime event) ----
   const refetch = useCallback(async () => {
@@ -220,6 +227,37 @@ export default function SplitView({ session, initialPeople, initialItems, initia
     localStorage.setItem(meKey, id);
   }
 
+  // Host adds a forgotten person to this split (no recreate needed).
+  async function addPerson() {
+    const name = addName.trim();
+    if (!name || !hostToken) return;
+    setAddErr("");
+    // Friendly client-side guard before hitting the server.
+    if (people.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+      setAddErr(`"${name}" is already in this split.`);
+      return;
+    }
+    setAddBusy(true);
+    try {
+      const res = await fetch("/api/session/person", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: session.slug, hostToken, name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddErr(data.error || "Could not add person.");
+        return;
+      }
+      setAddName("");
+      await refetch();
+    } catch {
+      setAddErr("Network error — try again.");
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
   // Text used everywhere we share the link.
   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
   const shareTitle = session.title ? `Split-ez: ${session.title}` : "Split-ez — split the bill";
@@ -292,8 +330,24 @@ export default function SplitView({ session, initialPeople, initialItems, initia
             </button>
           ))}
         </div>
+
+        {hostToken && (
+          <AddPerson
+            value={addName}
+            onChange={(v) => {
+              setAddName(v);
+              if (addErr) setAddErr("");
+            }}
+            onAdd={addPerson}
+            busy={addBusy}
+            error={addErr}
+          />
+        )}
+
         <p className="text-center text-xs text-slate-400">
-          Not in the list? Ask whoever started the split to add you.
+          {hostToken
+            ? "Forgot someone? Add them above — no need to start over."
+            : "Not in the list? Ask whoever started the split to add you."}
         </p>
       </main>
     );
@@ -614,6 +668,19 @@ export default function SplitView({ session, initialPeople, initialItems, initia
         )}
       </div>
 
+      {hostToken && (
+        <AddPerson
+          value={addName}
+          onChange={(v) => {
+            setAddName(v);
+            if (addErr) setAddErr("");
+          }}
+          onAdd={addPerson}
+          busy={addBusy}
+          error={addErr}
+        />
+      )}
+
       {session.bill_image_url && (
         <a
           href={session.bill_image_url}
@@ -669,6 +736,54 @@ function ShareCard({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Host-only box to add a forgotten person to an existing split.
+ */
+function AddPerson({
+  value,
+  onChange,
+  onAdd,
+  busy,
+  error,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onAdd: () => void;
+  busy: boolean;
+  error: string;
+}) {
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2">
+        <span className="icon-tile h-8 w-8 text-base">＋</span>
+        <div>
+          <div className="font-bold leading-tight">Forgot someone?</div>
+          <div className="text-xs text-slate-500">Add a person to this split — no need to start over.</div>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onAdd();
+          }}
+          placeholder="Name"
+          className="input flex-1 py-2.5 text-sm"
+        />
+        <button
+          onClick={onAdd}
+          disabled={busy || !value.trim()}
+          className="btn-primary px-5 py-2.5 text-sm disabled:opacity-50"
+        >
+          {busy ? "Adding…" : "Add"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-sm font-medium text-red-600">{error}</p>}
     </div>
   );
 }

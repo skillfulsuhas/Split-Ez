@@ -10,13 +10,14 @@
 
 body {
   @apply text-slate-900 antialiased;
-  /* Rich gradient base (replaces the old flat white) so the page reads as a
-     designed surface even before the mesh + pattern layers paint. */
-  background-color: #eef1ff;
+  /* Colourful sunset-meets-twilight base (clearly tinted, not white) so the
+     glass cards pop against a living, saturated backdrop. */
+  background-color: #f7d6e6;
   background-image:
-    radial-gradient(1200px 800px at 10% -10%, rgba(129, 140, 248, 0.18), transparent 60%),
-    radial-gradient(1000px 700px at 110% 10%, rgba(236, 72, 153, 0.12), transparent 55%),
-    linear-gradient(180deg, #f4f1ff 0%, #eef3ff 45%, #f3f0ff 100%);
+    radial-gradient(1100px 760px at 8% -8%, rgba(255, 138, 101, 0.45), transparent 58%),
+    radial-gradient(1000px 720px at 100% 0%, rgba(168, 85, 247, 0.45), transparent 58%),
+    radial-gradient(1000px 760px at 50% 110%, rgba(56, 189, 248, 0.42), transparent 60%),
+    linear-gradient(160deg, #ffd9c2 0%, #f6c8e6 42%, #d9c8ff 72%, #c5e4ff 100%);
   background-attachment: fixed;
   min-height: 100vh;
   position: relative;
