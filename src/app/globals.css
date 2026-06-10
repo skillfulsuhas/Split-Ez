@@ -8,6 +8,10 @@
   color-scheme: light;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   @apply text-slate-900 antialiased;
   /* Colourful sunset-meets-twilight base (clearly tinted, not white) so the
@@ -24,8 +28,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Faint repeating food motif (forks, spoons, plates) tiled behind everything.
-   Pure inline SVG data-URI — no external asset, works offline. */
+/* Faint repeating food motif (forks, spoons, plates) tiled behind everything. */
 body::before {
   content: "";
   position: fixed;
@@ -37,9 +40,18 @@ body::before {
   background-size: 160px 160px;
 }
 
+/* Fine film-grain so flat gradients never look "web-page cheap". */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 /* ---- Animated gradient mesh background ---------------------------------- */
-/* Three slowly-drifting blobs sit fixed behind everything, giving the light
-   UI a living, colourful depth without overwhelming the glass cards. */
 .mesh-bg {
   position: fixed;
   inset: -20vmax;
@@ -77,23 +89,43 @@ body::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mesh-blob {
+  .mesh-blob,
+  .btn-primary::after,
+  .gradient-text-animated {
     animation: none !important;
   }
 }
 
 @layer components {
-  /* Heavier glassmorphism: stronger blur, translucency, layered shadow with a
-     bright top highlight so cards feel like they float above the mesh. */
+  /* Floating glass card with a hair-thin gradient edge and bright top
+     highlight. The ::before draws the 1px gradient border (border-image-free,
+     works with border-radius). */
   .card {
-    @apply rounded-3xl border border-white/70 p-5;
-    background: rgba(255, 255, 255, 0.62);
-    backdrop-filter: blur(20px) saturate(1.3);
-    -webkit-backdrop-filter: blur(20px) saturate(1.3);
+    @apply relative rounded-3xl p-5;
+    background: rgba(255, 255, 255, 0.66);
+    backdrop-filter: blur(20px) saturate(1.35);
+    -webkit-backdrop-filter: blur(20px) saturate(1.35);
     box-shadow:
       0 10px 40px -12px rgba(79, 70, 229, 0.28),
       0 2px 8px -2px rgba(15, 23, 42, 0.08),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.7);
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.75);
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.95),
+      rgba(255, 255, 255, 0.35) 40%,
+      rgba(139, 92, 246, 0.28) 100%
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
   }
 
   .glass {
@@ -109,32 +141,55 @@ body::before {
 
   .input {
     @apply w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900
-      placeholder:text-slate-400 outline-none transition
+      placeholder:text-slate-400 outline-none
       focus:border-brand focus:ring-4 focus:ring-brand/15;
+    transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+  }
+  .input:focus {
+    transform: translateY(-1px);
   }
 
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-semibold
-      transition active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+      transition active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
   }
 
+  /* Primary button: animated 3-stop gradient + a sheen that sweeps across on
+     hover, so it feels alive without being noisy. */
   .btn-primary {
-    @apply btn text-white shadow-soft;
-    background-image: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s, background-image 0.18s;
+    @apply btn relative overflow-hidden text-white shadow-soft;
+    background-image: linear-gradient(120deg, #6366f1 0%, #8b5cf6 45%, #d946ef 100%);
+    background-size: 180% 180%;
+    animation: gradient-x 6s ease infinite;
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s;
   }
-
+  .btn-primary::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.35) 50%,
+      transparent 70%
+    );
+    background-size: 250% 100%;
+    background-position: 200% 0;
+    transition: background-position 0.7s ease;
+    pointer-events: none;
+  }
   .btn-primary:hover {
-    background-image: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
     transform: translateY(-2px);
-    box-shadow: 0 16px 36px -10px rgba(99, 102, 241, 0.55);
+    box-shadow: 0 16px 36px -10px rgba(139, 92, 246, 0.6);
+  }
+  .btn-primary:hover::after {
+    background-position: -50% 0;
   }
 
   .btn-ghost {
     @apply btn bg-white/70 text-slate-700 border border-white/70 backdrop-blur hover:bg-white;
   }
 
-  /* A glass card that gently lifts on hover. */
   .card-lift {
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s;
   }
@@ -147,7 +202,12 @@ body::before {
 
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold
-      border transition cursor-pointer select-none active:scale-95;
+      border cursor-pointer select-none;
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s,
+      color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+  .chip:active {
+    transform: scale(0.92);
   }
 
   .chip-on {
@@ -164,8 +224,34 @@ body::before {
     background-image: linear-gradient(120deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
   }
 
+  /* Headline text whose gradient slowly drifts — used for hero copy. */
+  .gradient-text-animated {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(120deg, #6366f1, #8b5cf6, #d946ef, #8b5cf6, #6366f1);
+    background-size: 250% 100%;
+    animation: gradient-x 5s ease infinite;
+  }
+
   .icon-tile {
     @apply grid place-items-center rounded-2xl text-white shadow-soft;
     background-image: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  }
+
+  /* Bottom sheet (mobile-native feel) used by the Pay flow. */
+  .sheet-backdrop {
+    @apply fixed inset-0 z-[70] bg-slate-900/55;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .sheet {
+    @apply fixed inset-x-0 bottom-0 z-[71] mx-auto max-w-xl rounded-t-[28px] bg-white p-5 pb-8 shadow-2xl;
+  }
+  .sheet-handle {
+    @apply mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200;
+  }
+
+  /* Numbers that shouldn't jiggle as they count up. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }

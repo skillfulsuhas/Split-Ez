@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import { formatMoney } from "@/lib/compute";
 import Avatar from "@/components/Avatar";
+import CountUp from "@/components/CountUp";
 import type { Friend } from "@/lib/types";
 
 interface DraftItem {
@@ -68,6 +70,20 @@ async function compressImage(file: File): Promise<{ base64: string; mimeType: st
   }
 }
 
+// Shared stagger/spring variants for the page sections.
+const container = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.07, delayChildren: 0.05 } },
+};
+const rise = {
+  hidden: { opacity: 0, y: 18 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { type: "spring", damping: 24, stiffness: 240 } as const,
+  },
+};
+
 export default function NewSplit() {
   const router = useRouter();
 
@@ -118,6 +134,7 @@ export default function NewSplit() {
   const [error, setError] = useState("");
   const [detail, setDetail] = useState("");
   const [scanned, setScanned] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const num = (s: string) => (s.trim() === "" ? 0 : Number(s) || 0);
   const itemsTotal = items.reduce((a, b) => a + num(b.price), 0);
@@ -141,6 +158,8 @@ export default function NewSplit() {
   // Total discount sent to the backend (a single rupee amount, split proportionally).
   const totalDiscount = Math.min(grossTotal, discountAmount + extraDiscountAmount);
   const billTotal = Math.max(0, grossTotal - totalDiscount);
+
+  const imagePreview = image ? `data:${image.mimeType};base64,${image.base64}` : null;
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -184,6 +203,7 @@ export default function NewSplit() {
       setService(data.service_charge ? String(data.service_charge) : "");
       setExtras(data.extras ? String(data.extras) : "");
       setScanned(true);
+      if (navigator.vibrate) navigator.vibrate([12, 40, 12]);
     } catch (err: any) {
       setError("Network error while scanning — check your connection and try again, or enter the bill manually.");
       setDetail(err?.message || String(err));
@@ -259,32 +279,101 @@ export default function NewSplit() {
   }
 
   return (
-    <main className="flex flex-col gap-5">
-      <h1 className="text-2xl font-extrabold tracking-tight">New split</h1>
+    <motion.main
+      className="flex flex-col gap-5 pb-28"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.h1 variants={rise} className="text-3xl font-extrabold tracking-tight">
+        New <span className="gradient-text-animated">split</span>
+      </motion.h1>
 
-      {/* Upload */}
-      <section className="card">
-        <label className="label">📸 Scan the bill</label>
-        <p className="mb-3 text-xs text-slate-500">
-          Take a photo or pick one — items, tax and service charge fill in automatically.
-        </p>
+      {/* Upload — big tappable dropzone with a scanning beam while OCR runs */}
+      <motion.section variants={rise} className="card">
         <input
+          ref={fileInputRef}
           type="file"
           accept="image/*"
           onChange={handleFile}
           disabled={scanning}
-          className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-brand file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-brand-dark"
+          className="hidden"
         />
-        {scanning && <p className="mt-3 text-sm font-medium text-brand">Reading the bill…</p>}
-        {scanned && !scanning && (
-          <p className="mt-3 text-sm font-medium text-green-600">
-            ✓ Read the bill — check the items below and fix anything that looks off.
-          </p>
-        )}
-      </section>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={scanning}
+          className={`group relative block w-full overflow-hidden rounded-2xl border-2 border-dashed text-left transition
+            ${scanning ? "border-brand/60" : "border-brand/30 hover:border-brand/70"}
+            bg-gradient-to-br from-brand/5 via-accent/5 to-pop/5`}
+        >
+          {imagePreview ? (
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imagePreview}
+                alt="Bill"
+                className={`max-h-56 w-full object-cover transition ${scanning ? "opacity-80 saturate-50" : ""}`}
+              />
+              {scanning && (
+                <span
+                  aria-hidden
+                  className="absolute left-0 h-10 w-full animate-scanline bg-gradient-to-b from-transparent via-brand/50 to-transparent"
+                />
+              )}
+              {!scanning && (
+                <span className="absolute bottom-2 right-2 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand shadow backdrop-blur">
+                  ↺ Re-scan / change photo
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+              <motion.span
+                className="grid h-14 w-14 place-items-center rounded-2xl bg-white text-3xl shadow-soft"
+                animate={{ y: [0, -6, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              >
+                📸
+              </motion.span>
+              <span className="font-bold text-slate-800">Snap or upload the bill</span>
+              <span className="text-xs text-slate-500">
+                Items, tax & service charge fill themselves in. Magic.
+              </span>
+            </div>
+          )}
+        </button>
+
+        <AnimatePresence mode="wait">
+          {scanning && (
+            <motion.p
+              key="scanning"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-3 flex items-center gap-2 text-sm font-semibold text-brand"
+            >
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+              Reading the bill…
+            </motion.p>
+          )}
+          {scanned && !scanning && (
+            <motion.p
+              key="scanned"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="mt-3 text-sm font-semibold text-green-600"
+            >
+              ✓ Read the bill — check the items below and fix anything that looks off.
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </motion.section>
 
       {/* Title */}
-      <input
+      <motion.input
+        variants={rise}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Place / occasion (optional)"
@@ -292,53 +381,72 @@ export default function NewSplit() {
       />
 
       {/* Items */}
-      <section className="card">
+      <motion.section variants={rise} className="card">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-bold">Items</h2>
-          <span className="text-sm font-semibold text-slate-500">{formatMoney(itemsTotal)}</span>
+          <h2 className="flex items-center gap-2 font-bold">
+            <span className="icon-tile h-7 w-7 text-sm">🧾</span> Items
+          </h2>
+          <span className="text-sm font-bold text-slate-500">
+            <CountUp value={itemsTotal} format={(n) => formatMoney(n)} />
+          </span>
         </div>
         <div className="space-y-2">
-          {items.map((it, i) => (
-            <div key={i} className="flex gap-2">
-              <input
-                value={it.name}
-                onChange={(e) => updateItem(i, "name", e.target.value)}
-                placeholder="Item"
-                className="input flex-1 py-2.5 text-sm"
-              />
-              <input
-                value={it.price}
-                onChange={(e) => updateItem(i, "price", e.target.value)}
-                placeholder="₹"
-                inputMode="decimal"
-                className="input w-24 py-2.5 text-sm"
-              />
-              <button
-                onClick={() => removeItem(i)}
-                className="rounded-xl px-2 text-slate-400 transition hover:text-red-500"
-                aria-label="Remove item"
+          <AnimatePresence initial={false}>
+            {items.map((it, i) => (
+              <motion.div
+                key={i}
+                layout
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ type: "spring", damping: 26, stiffness: 320 }}
+                className="flex gap-2 overflow-visible"
               >
-                ✕
-              </button>
-            </div>
-          ))}
+                <input
+                  value={it.name}
+                  onChange={(e) => updateItem(i, "name", e.target.value)}
+                  placeholder="Item"
+                  className="input flex-1 py-2.5 text-sm"
+                />
+                <input
+                  value={it.price}
+                  onChange={(e) => updateItem(i, "price", e.target.value)}
+                  placeholder="₹"
+                  inputMode="decimal"
+                  className="input w-24 py-2.5 text-sm"
+                />
+                <button
+                  onClick={() => removeItem(i)}
+                  className="rounded-xl px-2 text-slate-400 transition hover:scale-110 hover:text-red-500 active:scale-90"
+                  aria-label="Remove item"
+                >
+                  ✕
+                </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
-        <button onClick={addItem} className="mt-3 text-sm font-semibold text-brand hover:text-brand-dark">
+        <button
+          onClick={addItem}
+          className="mt-3 text-sm font-bold text-brand transition hover:translate-x-0.5 hover:text-brand-dark"
+        >
           + Add item
         </button>
-      </section>
+      </motion.section>
 
       {/* Charges */}
-      <section className="card grid grid-cols-3 gap-3">
+      <motion.section variants={rise} className="card grid grid-cols-3 gap-3">
         <Field label="Tax (proportional)" value={tax} onChange={setTax} />
         <Field label="Service (equal)" value={service} onChange={setService} />
         <Field label="Extras (equal)" value={extras} onChange={setExtras} />
-      </section>
+      </motion.section>
 
       {/* Discount */}
-      <section className="card">
+      <motion.section variants={rise} className="card">
         <div className="flex items-center justify-between">
-          <h2 className="font-bold">Discount / offer</h2>
+          <h2 className="flex items-center gap-2 font-bold">
+            <span className="icon-tile h-7 w-7 text-sm">🏷️</span> Discount / offer
+          </h2>
           <button
             onClick={() => setHasDiscount((v) => !v)}
             className={`chip ${hasDiscount ? "chip-on" : "chip-off"}`}
@@ -351,79 +459,29 @@ export default function NewSplit() {
           everyone proportionally.
         </p>
 
-        {hasDiscount && (
-          <div className="mt-3 flex flex-col gap-3 animate-pop-in">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setDiscountType("percent")}
-                className={`chip flex-1 justify-center ${
-                  discountType === "percent" ? "chip-on" : "chip-off"
-                }`}
-              >
-                Percentage %
-              </button>
-              <button
-                onClick={() => setDiscountType("amount")}
-                className={`chip flex-1 justify-center ${
-                  discountType === "amount" ? "chip-on" : "chip-off"
-                }`}
-              >
-                Amount ₹
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                value={discountValue}
-                onChange={(e) => setDiscountValue(e.target.value)}
-                placeholder={discountType === "percent" ? "e.g. 10" : "e.g. 150"}
-                inputMode="decimal"
-                className="input flex-1"
-              />
-              <span className="text-lg font-semibold text-slate-500">
-                {discountType === "percent" ? "%" : "₹"}
-              </span>
-            </div>
-            {discountAmount > 0 && (
-              <p className="text-sm font-medium text-green-600">
-                −{formatMoney(discountAmount)} off the bill
-              </p>
-            )}
-
-            {/* Extra / platform discount (coupon on top of the restaurant offer) */}
-            {!hasExtraDiscount ? (
-              <button
-                onClick={() => setHasExtraDiscount(true)}
-                className="self-start text-sm font-semibold text-brand hover:text-brand-dark"
-              >
-                + Add extra / platform discount
-              </button>
-            ) : (
-              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 animate-pop-in">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-600">Extra / platform discount</span>
-                  <button
-                    onClick={() => {
-                      setHasExtraDiscount(false);
-                      setExtraDiscountValue("");
-                    }}
-                    className="text-xs font-semibold text-slate-400 hover:text-red-500"
-                  >
-                    Remove
-                  </button>
-                </div>
+        <AnimatePresence initial={false}>
+          {hasDiscount && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 280 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-3 flex flex-col gap-3">
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setExtraDiscountType("percent")}
+                    onClick={() => setDiscountType("percent")}
                     className={`chip flex-1 justify-center ${
-                      extraDiscountType === "percent" ? "chip-on" : "chip-off"
+                      discountType === "percent" ? "chip-on" : "chip-off"
                     }`}
                   >
                     Percentage %
                   </button>
                   <button
-                    onClick={() => setExtraDiscountType("amount")}
+                    onClick={() => setDiscountType("amount")}
                     className={`chip flex-1 justify-center ${
-                      extraDiscountType === "amount" ? "chip-on" : "chip-off"
+                      discountType === "amount" ? "chip-on" : "chip-off"
                     }`}
                   >
                     Amount ₹
@@ -431,56 +489,139 @@ export default function NewSplit() {
                 </div>
                 <div className="flex items-center gap-2">
                   <input
-                    value={extraDiscountValue}
-                    onChange={(e) => setExtraDiscountValue(e.target.value)}
-                    placeholder={extraDiscountType === "percent" ? "e.g. 5" : "e.g. 75"}
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    placeholder={discountType === "percent" ? "e.g. 10" : "e.g. 150"}
                     inputMode="decimal"
                     className="input flex-1"
                   />
                   <span className="text-lg font-semibold text-slate-500">
-                    {extraDiscountType === "percent" ? "%" : "₹"}
+                    {discountType === "percent" ? "%" : "₹"}
                   </span>
                 </div>
-                {extraDiscountAmount > 0 && (
-                  <p className="text-sm font-medium text-green-600">
-                    −{formatMoney(extraDiscountAmount)} extra off
+                {discountAmount > 0 && (
+                  <p className="text-sm font-semibold text-green-600">
+                    −{formatMoney(discountAmount)} off the bill
                   </p>
                 )}
+
+                {/* Extra / platform discount (coupon on top of the restaurant offer) */}
+                {!hasExtraDiscount ? (
+                  <button
+                    onClick={() => setHasExtraDiscount(true)}
+                    className="self-start text-sm font-bold text-brand hover:text-brand-dark"
+                  >
+                    + Add extra / platform discount
+                  </button>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.97 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-slate-600">
+                        Extra / platform discount
+                      </span>
+                      <button
+                        onClick={() => {
+                          setHasExtraDiscount(false);
+                          setExtraDiscountValue("");
+                        }}
+                        className="text-xs font-semibold text-slate-400 hover:text-red-500"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setExtraDiscountType("percent")}
+                        className={`chip flex-1 justify-center ${
+                          extraDiscountType === "percent" ? "chip-on" : "chip-off"
+                        }`}
+                      >
+                        Percentage %
+                      </button>
+                      <button
+                        onClick={() => setExtraDiscountType("amount")}
+                        className={`chip flex-1 justify-center ${
+                          extraDiscountType === "amount" ? "chip-on" : "chip-off"
+                        }`}
+                      >
+                        Amount ₹
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={extraDiscountValue}
+                        onChange={(e) => setExtraDiscountValue(e.target.value)}
+                        placeholder={extraDiscountType === "percent" ? "e.g. 5" : "e.g. 75"}
+                        inputMode="decimal"
+                        className="input flex-1"
+                      />
+                      <span className="text-lg font-semibold text-slate-500">
+                        {extraDiscountType === "percent" ? "%" : "₹"}
+                      </span>
+                    </div>
+                    {extraDiscountAmount > 0 && (
+                      <p className="text-sm font-semibold text-green-600">
+                        −{formatMoney(extraDiscountAmount)} extra off
+                      </p>
+                    )}
+                  </motion.div>
+                )}
               </div>
-            )}
-          </div>
-        )}
-      </section>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.section>
 
       {/* People */}
-      <section className="card">
-        <h2 className="font-bold">Who&apos;s splitting?</h2>
-        <p className="mb-3 text-xs text-slate-500">
+      <motion.section variants={rise} className="card">
+        <h2 className="flex items-center gap-2 font-bold">
+          <span className="icon-tile h-7 w-7 text-sm">👥</span> Who&apos;s splitting?
+        </h2>
+        <p className="mb-3 mt-1 text-xs text-slate-500">
           Start typing a name — saved friends pop up with their photo. Tap the circle to add a
           new photo.
         </p>
         <div className="space-y-2">
-          {people.map((p, i) => (
-            <PersonRow
-              key={i}
-              index={i}
-              person={p}
-              friends={allFriends}
-              canRemove={people.length > 1}
-              onPatch={(patch) => patchPerson(i, patch)}
-              onRemove={() => removePerson(i)}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {people.map((p, i) => (
+              <motion.div
+                key={i}
+                layout
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              >
+                <PersonRow
+                  index={i}
+                  person={p}
+                  friends={allFriends}
+                  canRemove={people.length > 1}
+                  onPatch={(patch) => patchPerson(i, patch)}
+                  onRemove={() => removePerson(i)}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
-        <button onClick={addPerson} className="mt-3 text-sm font-semibold text-brand hover:text-brand-dark">
+        <button
+          onClick={addPerson}
+          className="mt-3 text-sm font-bold text-brand transition hover:translate-x-0.5 hover:text-brand-dark"
+        >
           + Add person
         </button>
-      </section>
+      </motion.section>
 
       {/* Who paid? — enables one-tap UPI repayment at the end */}
-      <section className="card">
-        <h2 className="font-bold">Who paid the bill?</h2>
-        <p className="mb-3 text-xs text-slate-500">
+      <motion.section variants={rise} className="card">
+        <h2 className="flex items-center gap-2 font-bold">
+          <span className="icon-tile h-7 w-7 text-sm">💳</span> Who paid the bill?
+        </h2>
+        <p className="mb-3 mt-1 text-xs text-slate-500">
           Optional — add the payer&apos;s name and UPI so everyone can repay them in one tap when
           the split is done.
         </p>
@@ -503,24 +644,14 @@ export default function NewSplit() {
             phone number works if it&apos;s registered for UPI.
           </p>
         </div>
-      </section>
-
-      {/* Total */}
-      <div className="card flex items-center justify-between bg-gradient-to-br from-brand to-accent text-white">
-        <div>
-          <span className="text-sm text-white/80">Bill total</span>
-          <div className="text-3xl font-extrabold">{formatMoney(billTotal)}</div>
-        </div>
-        {totalDiscount > 0 && (
-          <div className="text-right text-sm text-white/80">
-            <div className="line-through">{formatMoney(grossTotal)}</div>
-            <div className="font-semibold text-white">−{formatMoney(totalDiscount)}</div>
-          </div>
-        )}
-      </div>
+      </motion.section>
 
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <motion.div
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
           <p>{error}</p>
           {detail && (
             <details className="mt-2">
@@ -528,17 +659,44 @@ export default function NewSplit() {
               <p className="mt-1 break-words text-xs text-red-500">{detail}</p>
             </details>
           )}
-        </div>
+        </motion.div>
       )}
 
-      <button
-        onClick={create}
-        disabled={creating}
-        className="btn-primary sticky bottom-4 py-4 text-lg shadow-lg"
+      {/* Docked total + create bar — always within thumb's reach */}
+      <motion.div
+        variants={rise}
+        className="glass fixed inset-x-0 bottom-0 z-50 mx-auto flex max-w-xl items-center gap-3 rounded-t-3xl border-b-0 px-4 py-3 shadow-float"
       >
-        {creating ? "Creating…" : "Create & get share link"}
-      </button>
-    </main>
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Bill total
+          </div>
+          <div className="text-2xl font-extrabold leading-tight text-slate-900">
+            <CountUp value={billTotal} format={(n) => formatMoney(n)} />
+          </div>
+          {totalDiscount > 0 && (
+            <div className="text-[11px] font-semibold text-green-600">
+              <span className="text-slate-400 line-through">{formatMoney(grossTotal)}</span>{" "}
+              −{formatMoney(totalDiscount)} saved
+            </div>
+          )}
+        </div>
+        <button
+          onClick={create}
+          disabled={creating}
+          className="btn-primary ml-auto shrink-0 px-6 py-3.5 text-base"
+        >
+          {creating ? (
+            <>
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Creating…
+            </>
+          ) : (
+            <>Create & share →</>
+          )}
+        </button>
+      </motion.div>
+    </motion.main>
   );
 }
 
@@ -626,7 +784,7 @@ function PersonRow({
         type="button"
         onClick={() => fileRef.current?.click()}
         disabled={uploading}
-        className="relative shrink-0 rounded-full"
+        className="relative shrink-0 rounded-full transition hover:scale-105 active:scale-95"
         title="Add a photo"
       >
         <Avatar name={person.name || "?"} photoUrl={person.photo_url} size={40} ring />
@@ -666,7 +824,7 @@ function PersonRow({
                 key={f.id}
                 type="button"
                 onClick={() => pick(f)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-brand/5"
               >
                 <Avatar name={f.name} photoUrl={f.photo_url} size={28} />
                 <span className="font-medium">{f.name}</span>
@@ -679,7 +837,7 @@ function PersonRow({
       {canRemove && (
         <button
           onClick={onRemove}
-          className="rounded-xl px-2 text-slate-400 transition hover:text-red-500"
+          className="rounded-xl px-2 text-slate-400 transition hover:scale-110 hover:text-red-500 active:scale-90"
           aria-label="Remove person"
         >
           ✕
